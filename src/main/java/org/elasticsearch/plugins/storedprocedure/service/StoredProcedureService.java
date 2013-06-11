@@ -137,45 +137,80 @@ public class StoredProcedureService {
     	String name = request.param("storedSearchName");
     	String storedProcedureId = Utils.buildId(index, type, name);
     	DeleteResponse deleteResponse = this.delete(Config.StoredProcedureIndex, Config.StoredProcedureType, storedProcedureId);
-		try {
-			XContentBuilder xb = RestXContentBuilder.restContentBuilder(request);
-			xb.startObject()
-				.field("ok", true)
-				/*.field("found",deleteResponse.isNotFound())
-                .field("_index", deleteResponse.index())
-                .field("_type", deleteResponse.type())
-                .field("_id", deleteResponse.id())
-                .field("_version", deleteResponse.version())*/
-				.field("acknowlege", true)
-            .endObject();
-			response = new XContentRestResponse(request, RestStatus.OK, xb);
-		} catch (IOException e) {
-			e.printStackTrace();
-			log.error("delete stored procedure failed", e);
-			response = Utils.buildErrorResponse(request, "unsupported operation: not in 'search' or 'update'", e);
-		}
+    	if (deleteResponse != null){
+    		try {
+    			XContentBuilder xb = RestXContentBuilder.restContentBuilder(request);
+    			xb.startObject()
+    				.field("ok", true)
+    				/*.field("found",deleteResponse.isNotFound())
+                    .field("_index", deleteResponse.index())
+                    .field("_type", deleteResponse.type())
+                    .field("_id", deleteResponse.id())
+                    .field("_version", deleteResponse.version())*/
+    				.field("acknowlege", true)
+                .endObject();
+    			response = new XContentRestResponse(request, RestStatus.OK, xb);
+    		} catch (IOException e) {
+    			e.printStackTrace();
+    			log.error("delete stored procedure failed", e);
+    			response = Utils.buildErrorResponse(request, "unsupported operation: not in 'search' or 'update'", e);
+    		}
+    	}else{
+    		response = Utils.buildErrorResponse(request, "delete stored procedure failed", null);
+    	}
+		
     	return response;
+    }
+    
+    public XContentRestResponse getParsedMeta(RestRequest request){
+    	XContentRestResponse response = null;
+    	String meta = this.getParsedStoredProcedure(request);
+    	if (meta != null){
+    		try {
+				XContentBuilder xb = RestXContentBuilder.restContentBuilder(request);
+				Map<String, Object> content = XContentFactory.xContent(XContentType.JSON).createParser(meta).mapAndClose();
+				xb.map(content);
+				response = new XContentRestResponse(request, RestStatus.OK, xb);
+			} catch (IOException e) {
+				e.printStackTrace();
+				log.error("get parsed stored procedure failed", e);
+				response = Utils.buildErrorResponse(request, "get parsed stored procedure failed", e);
+			}    		
+    	}else{
+    		response = Utils.buildErrorResponse(request, "stored procedure not found", null);
+    	}
+    	return response;
+    }
+    
+    public String getParsedStoredProcedure(RestRequest request){
+    	String response = null;
+    	String index = request.param("index");
+    	String type = request.param("type");
+    	String name = request.param("storedSearchName");
+    	String storedProcedureId = Utils.buildId(index, type, name);
+    	GetResponse getResponse = this.get(Config.StoredProcedureIndex, Config.StoredProcedureType, storedProcedureId);
+    	if (getResponse.exists()){
+    		String requestBody = (String)getResponse.getSource().get("content");
+    		Map<String, Object> parameters = this.retrieveParametersFromUrl(request);
+    		response = this.processTemplate(storedProcedureId, requestBody, parameters);
+    	}    	
+		return response;
     }
     
     public XContentRestResponse executeUpdate(RestRequest request){
     	String index = request.param("index");
     	String type = request.param("type");
-    	String name = request.param("storedSearchName");
     	String documentId = request.param("id");
-    	String storedProcedureId = Utils.buildId(index, type, name);
     	XContentRestResponse response = null;
-    	GetResponse getResponse = this.get(Config.StoredProcedureIndex, Config.StoredProcedureType, storedProcedureId);
+    	String requestBody = this.getParsedStoredProcedure(request);
 
-    	if (!getResponse.exists()){
+    	if (requestBody != null){
     		response = Utils.buildErrorResponse(request, "stored procedure not exits!", null);
     	}else{
     		try {
-    			String requestBody = (String)getResponse.getSource().get("content");
-    			Map<String, Object> parameters = this.retrieveParametersFromUrl(request);
-    			String parsedRequestBody = this.processTemplate(storedProcedureId, requestBody, parameters);
     			UpdateRequest updateRequest = new UpdateRequest(index, type, documentId);
     			Map<String, Object> content = XContentFactory.xContent(XContentType.JSON)
-                        .createParser(parsedRequestBody).mapAndClose();
+                        .createParser(requestBody).mapAndClose();
                 if (content.containsKey("script")) {
                     updateRequest.script(content.get("script").toString());
                 }
@@ -224,22 +259,20 @@ public class StoredProcedureService {
     	String index = request.param("index");
     	String type = request.param("type");
     	String name = request.param("storedSearchName");
-    	String storedProcedureId = Utils.buildId(index, type, name);
     	XContentRestResponse response = null;
-    	GetResponse getResponse = this.get(Config.StoredProcedureIndex, Config.StoredProcedureType, storedProcedureId);
-    	if (getResponse == null || !getResponse.exists()){
+    	String requestBody = this.getParsedStoredProcedure(request);
+    	if (requestBody == null){
 			//error
 			response = Utils.buildErrorResponse(request, "stored procedure not exsits", null);
 		}else{
 			Map<String, Object> parameters = this.retrieveParametersFromUrl(request);
-			String content = (String)getResponse.getSource().get("content");
-			String query = this.processTemplate(storedProcedureId, content, parameters);
+			
 			
 			SearchRequestBuilder requestBuilder = client.prepareSearch(index);
 	    	if (type!= null){
 	    		requestBuilder.setTypes(type);
 	    	}
-	    	requestBuilder.setSource(query);
+	    	requestBuilder.setSource(requestBody);
 	    	
 	    	//other parameter that not for template
 	    	int size = request.paramAsInt("size", 0);

@@ -52,6 +52,7 @@ public class StoredProcedureAction extends BaseRestHandler {
 				}				
 			}else if (null != op && "parse".equalsIgnoreCase(op)){
 				//parse
+				res = storedProcedureService.getParsedMeta(request);
 			}else{
 				//illegal
 				res = Utils.buildErrorResponse(request, "unsupported operation", null);

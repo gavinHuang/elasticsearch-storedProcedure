@@ -23,7 +23,7 @@ public class StoredProcedurePlugin extends AbstractPlugin {
 	public void processModule(Module module) {
         if (module instanceof RestModule) {
             ((RestModule) module).addRestAction(StoredProcedureAction.class);
-            logger.info("StoredProcedurePlugin plugined!");
+            logger.info("[StoredProcedurePlugin] started!");
         }
     }
 
